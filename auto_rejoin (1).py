@@ -26,10 +26,13 @@ def save_config(config):
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=2)
 
+def is_valid_package(pkg):
+    import re
+    return bool(re.match(r'^[a-zA-Z][a-zA-Z0-9._]+$', pkg)) and " " not in pkg and len(pkg) > 3
+
 def detect_roblox_packages():
     found = []
 
-    # Method 1: deeplink hook — finds ANY app that handles roblox:// (official + executors)
     try:
         result = subprocess.run(
             ["pm", "query-activities", "-a", "android.intent.action.VIEW", "-d", "roblox://"],
@@ -39,36 +42,25 @@ def detect_roblox_packages():
             line = line.strip()
             if line.startswith("packageName="):
                 pkg = line.replace("packageName=", "").strip()
-                if pkg and pkg not in found:
+                if is_valid_package(pkg) and pkg not in found:
                     found.append(pkg)
-            # some Android versions print it differently
-            elif "package:" in line.lower():
+            elif line.startswith("package:"):
                 pkg = line.replace("package:", "").strip()
-                if pkg and pkg not in found:
+                if is_valid_package(pkg) and pkg not in found:
                     found.append(pkg)
     except:
         pass
 
-    # Method 2: keyword scan as fallback
     keywords = ["roblox", "rblx", "roblx", "rbx"]
     try:
         result = subprocess.run(["pm", "list", "packages"], capture_output=True, text=True)
         for line in result.stdout.splitlines():
             pkg = line.replace("package:", "").strip()
-            if any(k in pkg.lower() for k in keywords) and pkg not in found:
-                found.append(pkg)
-    except:
-        pass
-    try:
-        result = subprocess.run(["cmd", "package", "list", "packages"], capture_output=True, text=True)
-        for line in result.stdout.splitlines():
-            pkg = line.replace("package:", "").strip()
-            if any(k in pkg.lower() for k in keywords) and pkg not in found:
+            if is_valid_package(pkg) and any(k in pkg.lower() for k in keywords) and pkg not in found:
                 found.append(pkg)
     except:
         pass
 
-    # Method 3: known common package names
     common = [
         "com.roblox.client",
         "com.roblox.client2",
@@ -82,7 +74,7 @@ def detect_roblox_packages():
     for pkg in common:
         try:
             result = subprocess.run(["pm", "list", "packages", pkg], capture_output=True, text=True)
-            if pkg in result.stdout and pkg not in found:
+            if f"package:{pkg}" in result.stdout and pkg not in found:
                 found.append(pkg)
         except:
             pass
@@ -160,7 +152,6 @@ def send_webhook(webhook_url, packages_status, ram_total, ram_used, ram_free, ra
         online = sum(1 for i in packages_status.values() if i["running"])
         offline = total - online
 
-        # Instance details
         instance_lines = []
         for pkg, info in packages_status.items():
             dot = "🟢" if info["running"] else "🔴"
@@ -253,7 +244,7 @@ def setup_menu():
                 print()
                 print("  ❌ No Roblox packages found!")
                 print("  Use option [2] to set game ID manually.")
-                time.sleep(3)
+                input("  Press any key to go back...")
                 continue
             print(f"\n  Found {len(found)} package(s):\n")
             for i, pkg in enumerate(found):
@@ -269,16 +260,20 @@ def setup_menu():
                 pkg = found[idx]
                 if any(p["package"] == pkg for p in config["packages"]):
                     print("  ⚠️  Already saved!")
-                    time.sleep(1)
+                    input("  Press any key to go back...")
                     continue
                 game_id = input(f"  Enter Game ID for {pkg}: ").strip()
                 config["packages"].append({"package": pkg, "game_id": game_id})
                 save_config(config)
+                print()
                 print("  ✅ Saved!")
-                time.sleep(1)
+                print(f"     📦 {pkg}")
+                print(f"     🎮 Game ID: {game_id}")
+                print()
+                input("  Press any key to go back...")
             except:
                 print("  Invalid!")
-                time.sleep(1)
+                input("  Press any key to go back...")
 
         elif choice == "2":
             clear()
